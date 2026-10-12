@@ -1,15 +1,27 @@
 import os
+import threading
+from flask import Flask
 import telebot
 from google import genai
 
-# Lee las claves de forma segura desde el servidor en la nube
+# --- SERVIDOR WEB SECUNDARIO PARA ENGAÑAR A RENDER ---
+app = Flask(__name__)
+
+@app.route('/')
+def health_check():
+    return "A.R.K. Bot is running!", 200
+
+def run_web_server():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
+
+# --- CONFIGURACIÓN DEL BOT ---
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 client = genai.Client(api_key=GEMINI_API_KEY)
 
-# Instrucciones para el comportamiento del bot
 SYSTEM_PROMPT = """
 Eres A.R.K., el asistente principal de documentación, diseño y programación del videojuego independiente 
 Primesis:ORIGINS (un juego de supervivencia de bestias en 3D con mecánicas de territorio, inspirado en Kenshi y Darksiders 2 en su estilo visual, 
@@ -31,5 +43,9 @@ def responder_equipo(message):
     except Exception as e:
         bot.reply_to(message, f"❌ Ocurrió un error: {e}")
 
-print("🤖 ¡El bot A.R.K. de Primesis está activo y escuchando!")
-bot.infinity_polling()
+if __name__ == "__main__":
+    # Iniciar servidor web en segundo plano
+    threading.Thread(target=run_web_server, daemon=True).start()
+    
+    print("🤖 ¡El bot A.R.K. de Primesis está activo y escuchando!")
+    bot.infinity_polling()
