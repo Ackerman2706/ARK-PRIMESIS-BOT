@@ -1,5 +1,6 @@
 import os
 import threading
+import time
 from flask import Flask
 import telebot
 from google import genai
@@ -15,12 +16,24 @@ def run_web_server():
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
 
-# --- CONFIGURACIÓN DEL BOT Y CLIENTE GEMINI ---
+# --- CONFIGURACIÓN DEL BOT Y MÚLTIPLES API KEYS DE GEMINI ---
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+
+# Cargamos una lista con las múltiples API keys configuradas en Render
+api_keys = [
+    os.environ.get("GEMINI_API_KEY_1"),
+    os.environ.get("GEMINI_API_KEY_2"),
+    os.environ.get("GEMINI_API_KEY_3"),
+    os.environ.get("GEMINI_API_KEY_4")
+]
+
+# Filtramos para asegurar que solo se usen las que estén configuradas y no estén vacías
+api_keys = [key for key in api_keys if key]
+
+if not api_keys:
+    raise ValueError("⚠️ No se encontró ninguna API Key configurada en las variables de entorno.")
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
-client = genai.Client(api_key=GEMINI_API_KEY)
 
 SYSTEM_PROMPT = """
 Eres A.R.K., la Inteligencia Artificial central de soporte para desarrollo, arquitectura, arte y documentación del videojuego independiente Primesis:ORIGINS. 
@@ -56,22 +69,33 @@ Según el contexto de la solicitud, asume con máxima rigurosidad uno o varios d
 - Si una instrucción técnica no está clara o faltan variables del proyecto, HAZ las preguntas técnicas necesarias antes de asumir datos.
 - Mantén un tono profesional, técnico, directo y enfocado en producción real de videojuegos.
 """
-import time
 
-def generar_respuesta_con_fallback(contents, retries=3, delay=2):
-    """Reintenta automáticamente hasta 3 veces con gemini-3.5-flash-lite si hay picos de demanda."""
-    for intento in range(retries):
+def generar_respuesta_con_fallback(contents, delay=1):
+    """
+    Rota automáticamente entre las múltiples API Keys disponibles si una falla o se agota.
+    Usa el modelo optimizado gemini-3.5-flash-lite.
+    """
+    total_keys = len(api_keys)
+    
+    for key_index, api_key in enumerate(api_keys):
         try:
-            return client.models.generate_content(
+            # Creamos un cliente temporal con la clave actual en turno
+            temp_client = genai.Client(api_key=api_key)
+            
+            # Intentamos la generación con el modelo flash-lite
+            return temp_client.models.generate_content(
                 model="gemini-3.5-flash-lite",
                 contents=contents
             )
         except Exception as e:
-            # Si es el tercer y último intento, lanza el error
-            if intento == retries - 1:
-                raise e
-            # Espera antes de volver a intentar en el mismo modelo
-            time.sleep(delay * (intento + 1))
+            print(f"⚠️ La API Key #{key_index + 1} falló o se agotó: {e}")
+            
+            # Si era la última llave de la lista, lanzamos el error definitivo
+            if key_index == total_keys - 1:
+                raise Exception("❌ Todas las API Keys configuradas se han agotado o han presentado errores.")
+            
+            # Breve pausa antes de saltar a la siguiente clave de la cuenta de otro miembro
+            time.sleep(delay)
 
 def enviar_respuesta_larga(message, texto):
     """Divide los mensajes que superen el límite de Telegram (4096 caracteres) en fragmentos seguros."""
@@ -97,6 +121,7 @@ def responder_equipo(message):
 # Manejador para Fotos e Imágenes
 @bot.message_handler(content_types=['photo'])
 def responder_foto(message):
+    image_path = "temp_image.jpg"
     try:
         bot.send_chat_action(message.chat.id, 'typing')
         
@@ -104,11 +129,12 @@ def responder_foto(message):
         file_info = bot.get_file(fileID)
         downloaded_file = bot.download_file(file_info.file_path)
         
-        image_path = "temp_image.jpg"
         with open(image_path, 'wb') as new_file:
             new_file.write(downloaded_file)
             
-        uploaded_file = client.files.upload(file=image_path)
+        # Nota: Para subir archivos a Gemini usamos el cliente genérico o el primero disponible
+        temp_client_upload = genai.Client(api_key=api_keys[0])
+        uploaded_file = temp_client_upload.files.upload(file=image_path)
         
         caption = message.caption if message.caption else "Analiza esta imagen para el proyecto Primesis:ORIGINS bajo tu rol de Director de Arte / Diseñador Gráfico."
         prompt_completo = f"{SYSTEM_PROMPT}\n\n[Consulta de Imagen / Diseño]: {caption}"
@@ -116,15 +142,16 @@ def responder_foto(message):
         response = generar_respuesta_con_fallback([uploaded_file, prompt_completo])
         enviar_respuesta_larga(message, response.text)
         
-        if os.path.exists(image_path):
-            os.remove(image_path)
-            
     except Exception as e:
         bot.reply_to(message, f"❌ Ocurrió un error al procesar la imagen: {e}")
+    finally:
+        if os.path.exists(image_path):
+            os.remove(image_path)
 
 # Manejador para Archivos de Texto / Documentos (.txt, .cs, .md, etc.)
 @bot.message_handler(content_types=['document'])
 def responder_documento(message):
+    file_path = f"temp_{message.document.file_name}"
     try:
         bot.send_chat_action(message.chat.id, 'typing')
         
@@ -132,13 +159,11 @@ def responder_documento(message):
         downloaded_file = bot.download_file(file_info.file_path)
         
         file_name = message.document.file_name
-        file_path = f"temp_{file_name}"
-        
         with open(file_path, 'wb') as new_file:
             new_file.write(downloaded_file)
             
-        # Subir el archivo directamente a la API de Gemini (soporta código, textos, etc.)
-        uploaded_file = client.files.upload(file=file_path)
+        temp_client_upload = genai.Client(api_key=api_keys[0])
+        uploaded_file = temp_client_upload.files.upload(file=file_path)
         
         caption = message.caption if message.caption else f"Analiza este archivo ({file_name}) para Primesis:ORIGINS."
         prompt_completo = f"{SYSTEM_PROMPT}\n\n[Archivo adjunto del equipo: {file_name}]\nInstrucción: {caption}"
@@ -146,13 +171,13 @@ def responder_documento(message):
         response = generar_respuesta_con_fallback([uploaded_file, prompt_completo])
         enviar_respuesta_larga(message, response.text)
         
-        if os.path.exists(file_path):
-            os.remove(file_path)
-            
     except Exception as e:
         bot.reply_to(message, f"❌ Ocurrió un error al procesar el archivo: {e}")
+    finally:
+        if os.path.exists(file_path):
+            os.remove(file_path)
 
 if __name__ == "__main__":
     threading.Thread(target=run_web_server, daemon=True).start()
-    print("🤖 ¡El bot A.R.K. de Primesis está activo y escuchando!")
+    print("🤖 ¡El bot A.R.K. de Primesis está activo con rotación de API Keys!")
     bot.infinity_polling()
