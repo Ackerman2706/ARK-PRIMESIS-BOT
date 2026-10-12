@@ -44,16 +44,28 @@ Según la carpeta o la solicitud del equipo, adopta el rol profesional correspon
 Sé directo, realista, técnico, organizado y usa un tono motivador.
 """
 
+def generar_respuesta_con_fallback(contents):
+    """Intenta usar gemini-3.8-flash; si da error 503 por alta demanda, usa gemini-2.5-flash automáticamente."""
+    try:
+        return client.models.generate_content(
+            model="gemini-3.8-flash",
+            contents=contents
+        )
+    except Exception as e:
+        if "503" in str(e) or "UNAVAILABLE" in str(e):
+            return client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=contents
+            )
+        raise e
+
 # Manejador para Mensajes de Texto
 @bot.message_handler(func=lambda message: True, content_types=['text'])
 def responder_equipo(message):
     try:
         bot.send_chat_action(message.chat.id, 'typing')
         prompt_completo = f"{SYSTEM_PROMPT}\n\nMensaje del equipo: {message.text}"
-        response = client.models.generate_content(
-            model="gemini-3.8-flash",
-            contents=prompt_completo
-        )
+        response = generar_respuesta_con_fallback(prompt_completo)
         bot.reply_to(message, response.text)
     except Exception as e:
         bot.reply_to(message, f"❌ Ocurrió un error: {e}")
@@ -78,10 +90,7 @@ def responder_foto(message):
         caption = message.caption if message.caption else "Analiza esta imagen para el proyecto Primesis:ORIGINS bajo tu rol de Director de Arte / Diseñador Gráfico."
         prompt_completo = f"{SYSTEM_PROMPT}\n\n[Consulta de Imagen / Diseño]: {caption}"
         
-        response = client.models.generate_content(
-            model="gemini-3.8-flash",
-            contents=[uploaded_file, prompt_completo]
-        )
+        response = generar_respuesta_con_fallback([uploaded_file, prompt_completo])
         
         bot.reply_to(message, response.text)
         
