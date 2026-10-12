@@ -59,6 +59,16 @@ def generar_respuesta_con_fallback(contents):
             )
         raise e
 
+def enviar_respuesta_larga(message, texto):
+    """Divide los mensajes que superen el límite de Telegram (4096 caracteres) en fragmentos seguros."""
+    limite = 4000
+    if len(texto) <= limite:
+        bot.reply_to(message, texto)
+    else:
+        trozos = [texto[i:i+limite] for i in range(0, len(texto), limite)]
+        for trozo in trozos:
+            bot.send_message(message.chat.id, trozo)
+
 # Manejador para Mensajes de Texto
 @bot.message_handler(func=lambda message: True, content_types=['text'])
 def responder_equipo(message):
@@ -66,7 +76,7 @@ def responder_equipo(message):
         bot.send_chat_action(message.chat.id, 'typing')
         prompt_completo = f"{SYSTEM_PROMPT}\n\nMensaje del equipo: {message.text}"
         response = generar_respuesta_con_fallback(prompt_completo)
-        bot.reply_to(message, response.text)
+        enviar_respuesta_larga(message, response.text)
     except Exception as e:
         bot.reply_to(message, f"❌ Ocurrió un error: {e}")
 
@@ -76,7 +86,6 @@ def responder_foto(message):
     try:
         bot.send_chat_action(message.chat.id, 'typing')
         
-        # Descargar la foto enviada en mayor resolución
         fileID = message.photo[-1].file_id
         file_info = bot.get_file(fileID)
         downloaded_file = bot.download_file(file_info.file_path)
@@ -91,8 +100,7 @@ def responder_foto(message):
         prompt_completo = f"{SYSTEM_PROMPT}\n\n[Consulta de Imagen / Diseño]: {caption}"
         
         response = generar_respuesta_con_fallback([uploaded_file, prompt_completo])
-        
-        bot.reply_to(message, response.text)
+        enviar_respuesta_larga(message, response.text)
         
         if os.path.exists(image_path):
             os.remove(image_path)
@@ -100,9 +108,37 @@ def responder_foto(message):
     except Exception as e:
         bot.reply_to(message, f"❌ Ocurrió un error al procesar la imagen: {e}")
 
+# Manejador para Archivos de Texto / Documentos (.txt, .cs, .md, etc.)
+@bot.message_handler(content_types=['document'])
+def responder_documento(message):
+    try:
+        bot.send_chat_action(message.chat.id, 'typing')
+        
+        file_info = bot.get_file(message.document.file_id)
+        downloaded_file = bot.download_file(file_info.file_path)
+        
+        file_name = message.document.file_name
+        file_path = f"temp_{file_name}"
+        
+        with open(file_path, 'wb') as new_file:
+            new_file.write(downloaded_file)
+            
+        # Subir el archivo directamente a la API de Gemini (soporta código, textos, etc.)
+        uploaded_file = client.files.upload(file=file_path)
+        
+        caption = message.caption if message.caption else f"Analiza este archivo ({file_name}) para Primesis:ORIGINS."
+        prompt_completo = f"{SYSTEM_PROMPT}\n\n[Archivo adjunto del equipo: {file_name}]\nInstrucción: {caption}"
+        
+        response = generar_respuesta_con_fallback([uploaded_file, prompt_completo])
+        enviar_respuesta_larga(message, response.text)
+        
+        if os.path.exists(file_path):
+            os.remove(file_path)
+            
+    except Exception as e:
+        bot.reply_to(message, f"❌ Ocurrió un error al procesar el archivo: {e}")
+
 if __name__ == "__main__":
-    # Iniciar servidor Flask en hilo secundario
     threading.Thread(target=run_web_server, daemon=True).start()
-    
     print("🤖 ¡El bot A.R.K. de Primesis está activo y escuchando!")
     bot.infinity_polling()
