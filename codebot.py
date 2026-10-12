@@ -45,19 +45,18 @@ Sé directo, realista, técnico, organizado y usa un tono motivador.
 """
 
 def generar_respuesta_con_fallback(contents):
-    """Usa el modelo estándar de Gemini para procesar las peticiones."""
+    """Usa el modelo oficial actual para la librería google-genai."""
     try:
+        return client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=contents
+        )
+    except Exception as e:
+        # Fallback a flash genérico si ocurre algún detalle
         return client.models.generate_content(
             model="gemini-2.5-flash",
             contents=contents
         )
-    except Exception as e:
-        # Fallback a gemini-1.5-flash por seguridad si el principal falla
-        try:
-            return client.models.generate_content(
-                model="gemini-1.5-flash",
-                contents=contents
-            )
         except Exception as e2:
             raise e2
 
