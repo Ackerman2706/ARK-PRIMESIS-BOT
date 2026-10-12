@@ -45,28 +45,12 @@ Sé directo, realista, técnico, organizado y usa un tono motivador.
 """
 
 def generar_respuesta_con_fallback(contents):
-    """Usa una cadena de respaldo con 3 modelos para máxima disponibilidad."""
-    # Intento 1: Modelo principal actual
-    try:
-        return client.models.generate_content(
-            model="gemini-3.8-flash",
-            contents=contents
-        )
-    except Exception as e1:
-        # Intento 2: Respaldo secundario
-        try:
-            return client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=contents
-            )
-        except Exception as e2:
-            # Intento 3: Último recurso de seguridad
-            return client.models.generate_content(
-                model="gemini-1.5-flash",
-                contents=contents
-            )
-        except Exception as e2:
-            raise e2
+    """Usa el modelo principal estable de la API."""
+    return client.models.generate_content(
+        model="gemini-2.0-flash",
+        contents=contents
+    )
+            
 
 def enviar_respuesta_larga(message, texto):
     """Divide los mensajes que superen el límite de Telegram (4096 caracteres) en fragmentos seguros."""
