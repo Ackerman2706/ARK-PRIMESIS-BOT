@@ -24,7 +24,7 @@ def responder_equipo(message):
         bot.send_chat_action(message.chat.id, 'typing')
         prompt_completo = f"{SYSTEM_PROMPT}\n\nMensaje del equipo: {message.text}"
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-3.8-flash",
             contents=prompt_completo
         )
         bot.reply_to(message, response.text)
