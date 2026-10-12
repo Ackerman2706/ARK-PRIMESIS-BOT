@@ -45,19 +45,21 @@ Sé directo, realista, técnico, organizado y usa un tono motivador.
 """
 
 def generar_respuesta_con_fallback(contents):
-    """Intenta usar gemini-3.8-flash; si da error 503 por alta demanda, usa gemini-2.5-flash automáticamente."""
+    """Usa el modelo estándar de Gemini para procesar las peticiones."""
     try:
         return client.models.generate_content(
-            model="gemini-3.8-flash",
+            model="gemini-2.5-flash",
             contents=contents
         )
     except Exception as e:
-        if "503" in str(e) or "UNAVAILABLE" in str(e):
+        # Fallback a gemini-1.5-flash por seguridad si el principal falla
+        try:
             return client.models.generate_content(
-                model="gemini-2.5-flash",
+                model="gemini-1.5-flash",
                 contents=contents
             )
-        raise e
+        except Exception as e2:
+            raise e2
 
 def enviar_respuesta_larga(message, texto):
     """Divide los mensajes que superen el límite de Telegram (4096 caracteres) en fragmentos seguros."""
