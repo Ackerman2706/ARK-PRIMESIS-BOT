@@ -43,14 +43,12 @@ Según la carpeta o la solicitud del equipo, adopta el rol profesional correspon
 
 Sé directo, realista, técnico, organizado y usa un tono motivador.
 """
-
 def generar_respuesta_con_fallback(contents):
-    """Usa el modelo principal estable de la API."""
+    """Usa el modelo oficial actual requerido por la API."""
     return client.models.generate_content(
-        model="gemini-2.0-flash",
+        model="gemini-3.8-flash",
         contents=contents
     )
-            
 
 def enviar_respuesta_larga(message, texto):
     """Divide los mensajes que superen el límite de Telegram (4096 caracteres) en fragmentos seguros."""
